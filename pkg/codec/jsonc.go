@@ -83,7 +83,7 @@ func (err *JsonError) ErrorCode() int {
 
 // NewCodec creates a new RPC server codec with support for JSON-RPC 2.0 based
 // on explicitly given encoding and decoding methods.
-func NewCodec(rwc io.ReadWriteCloser, encode, decode func(v interface{}) error) ts.ServerCodec {
+func NewCodec(rwc io.ReadWriteCloser, encode, decode func(v interface{}) error) ServerCodec {
 	return &JsonCodec{
 		closed: make(chan interface{}),
 		encode: encode,
@@ -93,7 +93,7 @@ func NewCodec(rwc io.ReadWriteCloser, encode, decode func(v interface{}) error) 
 }
 
 // NewJSONCodec creates a new RPC server codec with support for JSON-RPC 2.0.
-func NewJSONCodec(rwc io.ReadWriteCloser) ts.ServerCodec {
+func NewJSONCodec(rwc io.ReadWriteCloser) ServerCodec {
 	enc := json.NewEncoder(rwc)
 	dec := json.NewDecoder(rwc)
 	dec.UseNumber()
