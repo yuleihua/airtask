@@ -127,7 +127,7 @@ func (c *JsonCodec) ReadRequestHeaders() ([]ts.RpcRequest, bool, ts.Error) {
 
 	var incomingMsg json.RawMessage
 	if err := c.decode(&incomingMsg); err != nil {
-		return nil, false, &ts.InvalidRequestError{err.Error()}
+		return nil, false, &ts.InvalidRequestError{Message:err.Error()}
 	}
 	if isBatch(incomingMsg) {
 		return parseBatchRequest(incomingMsg)
@@ -157,11 +157,11 @@ func checkReqId(reqId json.RawMessage) error {
 func parseRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.Error) {
 	var in JsonRequest
 	if err := json.Unmarshal(incomingMsg, &in); err != nil {
-		return nil, false, &ts.InvalidMessageError{err.Error()}
+		return nil, false, &ts.InvalidMessageError{Message:err.Error()}
 	}
 
 	if err := checkReqId(in.Id); err != nil {
-		return nil, false, &ts.InvalidMessageError{err.Error()}
+		return nil, false, &ts.InvalidMessageError{Message:err.Error()}
 	}
 
 	// subscribe are special, they will always use `subscribeMethod` as first param in the payload
@@ -172,14 +172,14 @@ func parseRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.Error)
 			var subscribeMethod [1]string
 			if err := json.Unmarshal(in.Payload, &subscribeMethod); err != nil {
 				log.Debug(fmt.Sprintf("Unable to parse subscription method: %v\n", err))
-				return nil, false, &ts.InvalidRequestError{"Unable to parse subscription request"}
+				return nil, false, &ts.InvalidRequestError{Message:"Unable to parse subscription request"}
 			}
 
 			reqs[0].Service, reqs[0].Method = strings.TrimSuffix(in.Method, subscribeMethodSuffix), subscribeMethod[0]
 			reqs[0].Params = in.Payload
 			return reqs, false, nil
 		}
-		return nil, false, &ts.InvalidRequestError{"Unable to parse subscription request"}
+		return nil, false, &ts.InvalidRequestError{Message:"Unable to parse subscription request"}
 	}
 
 	if strings.HasSuffix(in.Method, unsubscribeMethodSuffix) {
@@ -189,7 +189,7 @@ func parseRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.Error)
 
 	elems := strings.Split(in.Method, serviceMethodSeparator)
 	if len(elems) != 2 {
-		return nil, false, &ts.MethodNotFoundError{in.Method, ""}
+		return nil, false, &ts.MethodNotFoundError{Service:in.Method, Method:""}
 	}
 
 	// regular RPC call
@@ -205,13 +205,13 @@ func parseRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.Error)
 func parseBatchRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.Error) {
 	var in []JsonRequest
 	if err := json.Unmarshal(incomingMsg, &in); err != nil {
-		return nil, false, &ts.InvalidMessageError{err.Error()}
+		return nil, false, &ts.InvalidMessageError{Message:err.Error()}
 	}
 
 	requests := make([]ts.RpcRequest, len(in))
 	for i, r := range in {
 		if err := checkReqId(r.Id); err != nil {
-			return nil, false, &ts.InvalidMessageError{err.Error()}
+			return nil, false, &ts.InvalidMessageError{Message:err.Error()}
 		}
 
 		id := &in[i].Id
@@ -224,7 +224,7 @@ func parseBatchRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.E
 				var subscribeMethod [1]string
 				if err := json.Unmarshal(r.Payload, &subscribeMethod); err != nil {
 					log.Debug(fmt.Sprintf("Unable to parse subscription method: %v\n", err))
-					return nil, false, &ts.InvalidRequestError{"Unable to parse subscription request"}
+					return nil, false, &ts.InvalidRequestError{Message:"Unable to parse subscription request"}
 				}
 
 				requests[i].Service, requests[i].Method = strings.TrimSuffix(r.Method, subscribeMethodSuffix), subscribeMethod[0]
@@ -232,7 +232,7 @@ func parseBatchRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.E
 				continue
 			}
 
-			return nil, true, &ts.InvalidRequestError{"Unable to parse (un)subscribe request arguments"}
+			return nil, true, &ts.InvalidRequestError{Message:"Unable to parse (un)subscribe request arguments"}
 		}
 
 		if strings.HasSuffix(r.Method, unsubscribeMethodSuffix) {
@@ -248,7 +248,7 @@ func parseBatchRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.E
 		if elem := strings.Split(r.Method, serviceMethodSeparator); len(elem) == 2 {
 			requests[i].Service, requests[i].Method = elem[0], elem[1]
 		} else {
-			requests[i].Err = &ts.MethodNotFoundError{r.Method, ""}
+			requests[i].Err = &ts.MethodNotFoundError{Service:r.Method, Method:""}
 		}
 	}
 
@@ -259,7 +259,7 @@ func parseBatchRequest(incomingMsg json.RawMessage) ([]ts.RpcRequest, bool, ts.E
 // types. It returns the parsed values or an error when the parsing failed.
 func (c *JsonCodec) ParseRequestArguments(argTypes []reflect.Type, params interface{}) ([]reflect.Value, ts.Error) {
 	if args, ok := params.(json.RawMessage); !ok {
-		return nil, &ts.InvalidParamsError{"Invalid params supplied"}
+		return nil, &ts.InvalidParamsError{Message:"Invalid params supplied"}
 	} else {
 		return parsePositionalArguments(args, argTypes)
 	}
@@ -272,31 +272,31 @@ func parsePositionalArguments(rawArgs json.RawMessage, types []reflect.Type) ([]
 	// Read beginning of the args array.
 	dec := json.NewDecoder(bytes.NewReader(rawArgs))
 	if tok, _ := dec.Token(); tok != json.Delim('[') {
-		return nil, &ts.InvalidParamsError{"non-array args"}
+		return nil, &ts.InvalidParamsError{Message:"non-array args"}
 	}
 	// Read args.
 	args := make([]reflect.Value, 0, len(types))
 	for i := 0; dec.More(); i++ {
 		if i >= len(types) {
-			return nil, &ts.InvalidParamsError{fmt.Sprintf("too many arguments, want at most %d", len(types))}
+			return nil, &ts.InvalidParamsError{Message:fmt.Sprintf("too many arguments, want at most %d", len(types))}
 		}
 		argval := reflect.New(types[i])
 		if err := dec.Decode(argval.Interface()); err != nil {
-			return nil, &ts.InvalidParamsError{fmt.Sprintf("invalid argument %d: %v", i, err)}
+			return nil, &ts.InvalidParamsError{Message:fmt.Sprintf("invalid argument %d: %v", i, err)}
 		}
 		if argval.IsNil() && types[i].Kind() != reflect.Ptr {
-			return nil, &ts.InvalidParamsError{fmt.Sprintf("missing value for required argument %d", i)}
+			return nil, &ts.InvalidParamsError{Message:fmt.Sprintf("missing value for required argument %d", i)}
 		}
 		args = append(args, argval.Elem())
 	}
 	// Read end of args array.
 	if _, err := dec.Token(); err != nil {
-		return nil, &ts.InvalidParamsError{err.Error()}
+		return nil, &ts.InvalidParamsError{Message:err.Error()}
 	}
 	// Set any missing args to nil.
 	for i := len(args); i < len(types); i++ {
 		if types[i].Kind() != reflect.Ptr {
-			return nil, &ts.InvalidParamsError{fmt.Sprintf("missing value for required argument %d", i)}
+			return nil, &ts.InvalidParamsError{Message:fmt.Sprintf("missing value for required argument %d", i)}
 		}
 		args = append(args, reflect.Zero(types[i]))
 	}
@@ -338,7 +338,7 @@ func (c *JsonCodec) Write(res interface{}) error {
 func (c *JsonCodec) Close() {
 	c.closer.Do(func() {
 		close(c.closed)
-		c.rw.Close()
+		//c.rw.Close()
 	})
 }
 

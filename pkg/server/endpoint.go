@@ -22,7 +22,7 @@ func StartHTTPEndpoint(endpoint string, apis []ts.API, modules []string, cors []
 			if err := handler.RegisterName(api.Namespace, api.Service); err != nil {
 				return nil, nil, err
 			}
-			log.Debugf("HTTP registered namespace", api.Namespace)
+			log.Infof("HTTP registered namespace: %s", api.Namespace)
 		}
 	}
 	// All APIs registered, start the HTTP listener

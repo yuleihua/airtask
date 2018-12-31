@@ -2,6 +2,12 @@ package types
 
 import "fmt"
 
+// Error wraps RPC errors, which contain an error code in addition to the message.
+type Error interface {
+	Error() string  // returns the message
+	ErrorCode() int // returns the code
+}
+
 // request is for an unknown service
 type MethodNotFoundError struct {
 	Service string
