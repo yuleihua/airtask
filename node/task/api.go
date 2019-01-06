@@ -2,24 +2,29 @@ package task
 
 import (
 	"sync"
-
-	"airman.com/airtask/pkg/module"
-	ts "airman.com/airtask/pkg/types"
 )
 
-type PublicTaskAPI struct {
-	backend ts.Backend
-	//mux       *event.TypeMux
-	quit      chan struct{}
-	filtersMu sync.Mutex
-	filters   map[string]*module.ModuleInfo
+// PrivateAdminAPI is the collection of administrative API methods exposed only
+// over a secure RPC channel.
+type PrivateAdminAPI struct {
+	backend Backend // Node interfaced by this API
+	manager *Manager
+	mu      sync.Mutex
 }
 
-func NewPublicTaskAPI(backend ts.Backend) *PublicTaskAPI{
+// NewPrivateAdminAPI creates a new API definition for the private admin methods
+// of the node itself.
+func NewPrivateAdminAPI(backend Backend) *PrivateAdminAPI {
+	return &PrivateAdminAPI{backend: backend}
+}
+
+type PublicTaskAPI struct {
+	backend Backend
+	mu      sync.Mutex
+}
+
+func NewPublicTaskAPI(backend Backend) *PublicTaskAPI {
 	return &PublicTaskAPI{
-		backend:backend,
-		filters:make(map[string]*module.ModuleInfo)
+		backend: backend,
 	}
 }
-
-
