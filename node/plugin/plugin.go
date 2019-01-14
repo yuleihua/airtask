@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"plugin"
-	"strings"
 
-	"github.com/fsnotify/fsnotify"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -21,14 +19,16 @@ type funcHandle func(ctx context.Context) error
 type funcErrHandle func(ctx context.Context, err error)
 
 type Module struct {
+	file       string
 	name       string
 	version    string
 	mainHandle funcHandle
 	errHandle  funcErrHandle
 }
 
-func NewModule(name, version string) *Module {
+func NewModule(file, name, version string) *Module {
 	return &Module{
+		file:    file,
 		name:    name,
 		version: version,
 	}
@@ -52,8 +52,8 @@ func (m *Module) String() string {
 	return fmt.Sprintf("name:%s,version:%s", m.name, m.version)
 }
 
-func executeModule(ctx context.Context, module string) error {
-	p, err := plugin.Open(module)
+func executeModule(ctx context.Context, m *Module) error {
+	p, err := plugin.Open(m.file)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func executeModule(ctx context.Context, module string) error {
 	return nil
 }
 
-func CallModule(ctx context.Context, module string, retryTimes int) error {
+func CallModule(ctx context.Context, module *Module, retryTimes int) error {
 	times := retryTimes
 	if retryTimes == 0 {
 		times = 1
@@ -92,66 +92,53 @@ func CallModule(ctx context.Context, module string, retryTimes int) error {
 	return nil
 }
 
-type TypeModuleEvent int
-
-const (
-	TypeModuleEventInit TypeModuleEvent = iota
-	TypeModuleEventAdd
-	TypeModuleEventUpdate
-	TypeModuleEventRemove
-)
-
-type ModuleEvent struct {
-	Id    string
-	Event TypeModuleEvent
-}
-
-func ModuleWatcher(root string, chanEvent chan ModuleEvent) error {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
-	defer watcher.Close()
-
-	err = watcher.Add(root)
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		for {
-			select {
-			case event := <-watcher.Events:
-				chanType := TypeModuleEventInit
-				if event.Op&fsnotify.Write == fsnotify.Write {
-					log.Println("modified file:", event.Name)
-
-				} else if event.Op&fsnotify.Create == fsnotify.Create {
-					log.Println("create file:", event.Name)
-					chanType = TypeModuleEventAdd
-
-				} else if event.Op&fsnotify.Remove == fsnotify.Remove {
-					log.Println("create file:", event.Name)
-					chanType = TypeModuleEventRemove
-				} else if event.Op&fsnotify.Rename == fsnotify.Rename {
-					log.Println("rename file:", event.Name)
-				}
-
-				if chanType == TypeModuleEventInit {
-					continue
-				}
-
-				id := event.Name
-				files := strings.Split(event.Name, ".")
-				if len(files) > 1 {
-					id = files[0]
-				}
-				chanEvent <- ModuleEvent{id, chanType}
-
-			case err := <-watcher.Errors:
-				log.Println("error:", err)
-			}
-		}
-	}()
-	return nil
-}
+//type TypeModuleEvent int
+//
+//const (
+//	TypeModuleEventInit TypeModuleEvent = iota
+//	TypeModuleEventAdd
+//	TypeModuleEventUpdate
+//	TypeModuleEventRemove
+//)
+//
+//type ModuleEvent struct {
+//	Id    string
+//	Event TypeModuleEvent
+//}
+//
+//func ModuleWatcher(root string, chanEvent chan ModuleEvent) {
+//	nc := make(chan notify.EventInfo, 32)
+//	if err := notify.Watch(root, nc, notify.Create, notify.Remove, notify.Rename); err != nil {
+//		log.Fatal("notify watch error", "path", root, "error", err)
+//	}
+//	defer notify.Stop(nc)
+//
+//	for {
+//		select {
+//		case event := <-nc:
+//			fileName := filepath.Base(event.Path())
+//			if []byte(fileName)[0] == '.' {
+//				continue
+//			}
+//			files := strings.Split(fileName, ".")
+//			if len(files) > 1 {
+//				fileName = files[0]
+//			}
+//
+//			chanType := TypeModuleEventInit
+//			switch event.Event() {
+//			case notify.Create:
+//				chanType = TypeModuleEventAdd
+//
+//			case notify.Remove:
+//				chanType = TypeModuleEventRemove
+//			}
+//			if chanType == TypeModuleEventInit {
+//				continue
+//			}
+//
+//			chanEvent <- ModuleEvent{Event: chanType, Id: fileName}
+//			log.Info("now event file %d: %s", chanType, fileName)
+//		}
+//	}
+//}

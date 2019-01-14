@@ -335,6 +335,11 @@ func (n *Node) Version() string {
 	return n.conf.Version.String()
 }
 
+// Version return application version.
+func (n *Node) NodeId() string {
+	return n.conf.GetNodeId()
+}
+
 // Name return application name.
 func (n *Node) Name() string {
 	return n.conf.Name

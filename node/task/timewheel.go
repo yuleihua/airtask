@@ -2,6 +2,7 @@ package task
 
 import (
 	"container/list"
+	"fmt"
 	"time"
 )
 
@@ -14,12 +15,45 @@ type TimeWheel struct {
 	slotNum    int // 槽数量
 }
 
+type TaskType int
+
+const (
+	TaskTypeUnkown TaskType = iota
+	TaskTypeCmd
+	TaskTypeFile
+	TaskTypePlugin
+)
+
 type Task struct {
 	delay      time.Duration // 延迟时间
 	circle     int           // 时间轮需要转动几圈
+	tt         TaskType
 	name       string
 	id         string // 定时器唯一标识, 用于删除定时器
 	retryTimes int
+}
+
+func NewTask(delay time.Duration, id, name string, t TaskType, retry int) *Task {
+	d := delay.Seconds()
+	if d < 1 {
+		d = 1
+	}
+	r := retry
+	if retry == 0 {
+		r = 1
+	}
+	return &Task{
+		delay:      delay,
+		name:       name,
+		id:         id,
+		tt:         t,
+		retryTimes: r,
+	}
+}
+
+func (t *Task) String() string {
+	return fmt.Sprintf("id:%s,name:%s,delay:%v,retry:%d,circle:%d",
+		t.id, t.name, t.delay, t.retryTimes, t.circle)
 }
 
 func NewTimeWheel(interval time.Duration, slotNum int) *TimeWheel {
@@ -66,24 +100,57 @@ func (tw *TimeWheel) addTask(task *Task) {
 	tw.timer[task.id] = pos
 }
 
-func (tw *TimeWheel) removeTask(key string) {
+func (tw *TimeWheel) removeTask(key string) bool {
 	position, ok := tw.timer[key]
 	if !ok {
-		return
+		return false
 	}
+	isDelete := false
 	l := tw.slots[position]
 	for e := l.Front(); e != nil; {
 		task := e.Value.(*Task)
 		if task.id == key {
 			delete(tw.timer, task.id)
 			l.Remove(e)
+			isDelete = true
 		}
 		e = e.Next()
 	}
+	return isDelete
+}
+
+func (tw *TimeWheel) checkTask(key string) bool {
+	if _, ok := tw.timer[key]; !ok {
+		return false
+	}
+	return true
+}
+
+func (tw *TimeWheel) getTask(key string) *Task {
+	position, ok := tw.timer[key]
+	if !ok {
+		return nil
+	}
+	var nt = &Task{}
+	l := tw.slots[position]
+	for e := l.Front(); e != nil; {
+		task := e.Value.(*Task)
+		if task.id == key {
+			nt.delay = task.delay
+			nt.tt = task.tt
+			nt.name = task.name
+			nt.retryTimes = task.retryTimes
+			nt.circle = task.circle
+			break
+		}
+		e = e.Next()
+	}
+	return nt
 }
 
 type TaskLite struct {
 	name       string
+	tt         TaskType
 	id         string
 	retryTimes int
 }
@@ -109,17 +176,17 @@ func (tw *TimeWheel) scanAndRunTask(l *list.List) []TaskLite {
 			e = e.Next()
 			continue
 		}
-
 		// run task
 		jobList = append(jobList, TaskLite{
 			name:       task.name,
 			id:         task.id,
+			tt:         task.tt,
 			retryTimes: task.retryTimes,
 		})
-
 		next := e.Next()
 		l.Remove(e)
 		delete(tw.timer, task.id)
 		e = next
 	}
+	return nil
 }
