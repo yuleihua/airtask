@@ -5,23 +5,32 @@ import (
 	"time"
 )
 
-func TestTasks(t *testing.T) {
-	id := "9999-11222-122233434-33434"
-	tw := NewTimeWheel(1*time.Second, 3600)
-	task := NewTask(5*time.Second, id, "cmdls-l", TaskTypeCmd, 1)
-	tw.AddTask(task)
+type TestItem struct {
+	id int64
+	d  time.Duration
+}
 
-	if isExisted := tw.CheckTask(id); !isExisted {
+func (t *TestItem) ID() int64 {
+	return t.id
+}
+
+func (t *TestItem) Delay() time.Duration {
+	return t.d
+}
+
+func TestTasks(t *testing.T) {
+	tw := NewTimeWheel(1*time.Second, 3600)
+	task := &TestItem{id: 12, d: 3 * time.Second}
+	tw.Add(task)
+
+	if isExisted := tw.Check(task.id); !isExisted {
 		t.Fatal("no task")
 	} else {
 		t.Log("task is existed")
 	}
 
-	if task := tw.GetTask(id); task != nil {
-		t.Logf("id task info: %#v\n", task)
-	} else {
-		t.Fatal("no task")
-	}
+	t1, t2 := tw.Get(task.id)
+	t.Logf("id task info: %v:%v\n", t1, t2)
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -30,7 +39,7 @@ func TestTasks(t *testing.T) {
 		isOut := false
 		select {
 		case <-ticker.C:
-			if tasks := tw.TriggerTask(); len(tasks) > 0 {
+			if tasks := tw.Trigger(); len(tasks) > 0 {
 				t.Logf("task info: %#v\n", tasks)
 				isOut = true
 				break
@@ -43,7 +52,7 @@ func TestTasks(t *testing.T) {
 		}
 	}
 
-	if task := tw.GetTask(id); task != nil {
+	if isExist := tw.Check(task.id); isExist {
 		t.Fatalf("id task info: %#v\n", task)
 	}
 }

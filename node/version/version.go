@@ -13,24 +13,29 @@
 //
 // You should have received a copy of the GNU Lesser General Public License
 // along with the airfk library. If not, see <http://www.gnu.org/licenses/>.
-package common
+package version
 
 import (
-	"errors"
+	"fmt"
+	"runtime"
 )
 
 var (
-	// parameter is invalid
-	ErrInvalidParameter = errors.New("invalid parameter")
-
-	ErrInvalidDatetime = errors.New("invalid datetime")
-
-	ErrInvalidPluginName = errors.New("invalid plugin name")
+	Version = "1.0.0"
 )
 
-func ToMsg(e error) string {
-	if e == nil {
-		return "success"
+func Info(name, commit, buildDate string) {
+	fmt.Println("Version:", Version)
+	if commit != "" {
+		fmt.Println("Git Commit:", commit)
 	}
-	return e.Error()
+	if buildDate != "" {
+		fmt.Println("Build Date:", buildDate)
+	}
+	if name != "" {
+		fmt.Println("Binary Name:", name)
+	}
+	fmt.Println("Architecture:", runtime.GOARCH)
+	fmt.Println("Go Version:", runtime.Version())
+	fmt.Println("Operating System:", runtime.GOOS)
 }

@@ -13,24 +13,21 @@
 //
 // You should have received a copy of the GNU Lesser General Public License
 // along with the airfk library. If not, see <http://www.gnu.org/licenses/>.
-package common
+package subscribe
 
 import (
-	"errors"
+	"airman.com/airfk/pkg/event"
+
+	cmn "airman.com/airtask/node/common"
 )
 
-var (
-	// parameter is invalid
-	ErrInvalidParameter = errors.New("invalid parameter")
+// Backend is a "wallet provider" that may contain a batch of accounts they can
+// sign transactions with and upon request, do so.
+type Backend interface {
 
-	ErrInvalidDatetime = errors.New("invalid datetime")
+	// SubscribeResultEvent registers a subscription of task results.
+	SubscribeResultEvent(ch chan<- []cmn.Result) event.Subscription
 
-	ErrInvalidPluginName = errors.New("invalid plugin name")
-)
-
-func ToMsg(e error) string {
-	if e == nil {
-		return "success"
-	}
-	return e.Error()
+	// SubscribeNewEvent registers a subscription of task results.
+	SubscribeNewEvent(ch chan<- int64) event.Subscription
 }

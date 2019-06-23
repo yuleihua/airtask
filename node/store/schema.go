@@ -13,24 +13,30 @@
 //
 // You should have received a copy of the GNU Lesser General Public License
 // along with the airfk library. If not, see <http://www.gnu.org/licenses/>.
-package common
+package store
 
 import (
-	"errors"
+	"airman.com/airtask/node/common"
 )
 
 var (
-	// parameter is invalid
-	ErrInvalidParameter = errors.New("invalid parameter")
+	// taskKey task queue.
+	taskKey = []byte("task")
 
-	ErrInvalidDatetime = errors.New("invalid datetime")
+	// resultKey result queue.
+	resultKey = []byte("result")
 
-	ErrInvalidPluginName = errors.New("invalid plugin name")
+	// prefixes
+	TaskPrefix   = []byte("t") // taskPrefix + uuid -> task
+	ResultPrefix = []byte("r") // ResultPrefix + uuid -> result
 )
 
-func ToMsg(e error) string {
-	if e == nil {
-		return "success"
-	}
-	return e.Error()
+// TaskKey return task key
+func TaskKey(number uint64) []byte {
+	return append(TaskPrefix, common.EncodeItemID(number).Bytes()...)
+}
+
+// ResultKey return result key
+func ResultKey(number uint64) []byte {
+	return append(ResultPrefix, common.EncodeItemID(number).Bytes()...)
 }

@@ -2,29 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt"
+	log "github.com/sirupsen/logrus"
 )
 
-func Prev(ctx context.Context) error {
-
-	fmt.Println("prev")
+func TaskMain(ctx context.Context) error {
+	log.Debugf("run main")
 	return nil
 }
 
-func Main(ctx context.Context) error {
-
-	fmt.Println("main")
-	return nil
-}
-
-func End(ctx context.Context) error {
-
-	fmt.Println("end")
-	return nil
-}
-
-func Err(ctx context.Context, err error) error {
-
-	fmt.Println("error is ", err)
+func TaskErr(ctx context.Context, err error) error {
+	log.Debugf("run main")
 	return nil
 }

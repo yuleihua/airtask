@@ -1,20 +1,37 @@
+// Copyright 2018 The huayulei_2003@hotmail.com Authors
+// This file is part of the airfk library.
+//
+// The airfk library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// The airfk library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the airfk library. If not, see <http://www.gnu.org/licenses/>.
 package task
 
 import (
 	"context"
-	"sync"
+	"errors"
 	"time"
 
+	"airman.com/airfk/pkg/common/hexutil"
+	"airman.com/airfk/pkg/server"
+	log "github.com/sirupsen/logrus"
+
 	cmn "airman.com/airtask/node/common"
-	"airman.com/airtask/pkg/common/hexutil"
-	"airman.com/airtask/pkg/server"
+	"airman.com/airtask/node/metrics"
 )
 
 // PrivateAdminAPI is the collection of administrative API methods exposed only
 // over a secure RPC channel.
 type PrivateTaskAPI struct {
 	manager *Manager
-	mu      sync.Mutex
 }
 
 // NewPrivateAdminAPI creates a new API definition for the private admin methods
@@ -23,100 +40,131 @@ func NewPrivateTaskAPI(manager *Manager) *PrivateTaskAPI {
 	return &PrivateTaskAPI{manager: manager}
 }
 
-func (api *PublicTaskAPI) AddTask(ctx context.Context, name string, delay int64, extra []byte) (string, error) {
-	if name == "" || delay <= 0 {
-		return "", cmn.ErrInvalidParameter
-	}
-	return api.manager.AddTask(name, time.Duration(delay)*time.Second, extra)
+// Job is task job.
+type JobArgs struct {
+	Name     *string        `json:"name"`
+	Extra    *hexutil.Bytes `json:"extra"`
+	Type     *string        `json:"type"`
+	UUID     uint64         `json:"uuid"`
+	Datetime int64          `json:"datetime"`
+	Retry    int            `json:"retry"`
+	Interval int            `json:"interval"`
 }
 
-func (api *PrivateTaskAPI) AddTaskWithDatetime(ctx context.Context, name string, datetime int64, extra hexutil.Bytes) (string, error) {
-	if name == "" || datetime <= 0 {
-		return "", cmn.ErrInvalidParameter
+// toJob convert args to job.
+func (args *JobArgs) toJob(isAdd bool) (*cmn.Job, error) {
+	log.Debugf("args: %#v", args)
+
+	// check name
+	if args.Name == nil {
+		return nil, errors.New("no name field")
 	}
 
-	dt := time.Unix(datetime, 0)
-	now := time.Now()
+	if isAdd {
+		var jobType cmn.JobType
+		if args.Type == nil {
+			return nil, errors.New("no type field")
+		} else {
+			switch *args.Type {
+			case "cmd":
+				jobType = cmn.JobTypeCmd
+			case "sh":
+				jobType = cmn.JobTypeFile
+			case "plugin":
+				jobType = cmn.JobTypePlugin
+			default:
+				return nil, errors.New("invalid type field")
+			}
+		}
 
-	if !dt.After(now) {
-		return "", cmn.ErrInvalidDatetime
+		retry := args.Retry
+		if retry == 0 {
+			retry = 1
+		}
+
+		interval := args.Interval
+		if interval == 0 {
+			interval = 1
+		}
+
+		if args.Datetime > 0 {
+			dt := time.Unix(args.Datetime, 0)
+			now := time.Now()
+
+			if !dt.After(now) {
+				return nil, cmn.ErrInvalidDatetime
+			}
+			interval = int(dt.Sub(now).Seconds())
+		}
+
+		return &cmn.Job{
+			Name:     *args.Name,
+			Type:     jobType,
+			Retry:    retry,
+			Interval: interval,
+			AddTime:  time.Now().Unix(),
+			Extra:    *args.Extra,
+		}, nil
 	}
-	return api.manager.AddTask(name, dt.Sub(now), extra)
+
+	if args.UUID == 0 {
+		return nil, errors.New("invalid uuid field")
+	}
+	return &cmn.Job{
+		UUID: cmn.EncodeItemID(args.UUID),
+	}, nil
 }
 
-func (api *PrivateTaskAPI) AddTaskWithRFC3339(ctx context.Context, name string, datetime string, extra hexutil.Bytes) (string, error) {
-	if name == "" || datetime == "" {
-		return "", cmn.ErrInvalidParameter
-	}
+// AddTask adds a task
+func (api *PrivateTaskAPI) AddTask(args JobArgs) (int64, error) {
+	// metric
+	metrics.TaskAddMeter.Mark(1)
 
-	dt, err := time.Parse(time.RFC3339, datetime)
+	job, err := args.toJob(true)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
+	return api.manager.AddTask(job)
+}
 
-	now := time.Now()
-	if !dt.After(now) {
-		return "", cmn.ErrInvalidDatetime
+// GetTask get task info
+func (api *PrivateTaskAPI) GetTask(args JobArgs) (map[string]interface{}, error) {
+	job, err := args.toJob(false)
+	if err != nil {
+		return nil, err
 	}
-	return api.manager.AddTask(name, dt.Sub(now), extra)
+	return api.manager.GetTask(job)
 }
 
-func (api *PublicTaskAPI) GetTask(ctx context.Context, id string) (string, error) {
-	if id == "" {
-		return "", cmn.ErrInvalidParameter
+// CheckTask check task is existed or not
+func (api *PrivateTaskAPI) CheckTask(args JobArgs) (bool, error) {
+	job, err := args.toJob(false)
+	if err != nil {
+		return false, err
 	}
-	return api.manager.GetTask(id)
+	return api.manager.CheckTask(job)
 }
 
-func (api *PrivateTaskAPI) CheckTask(ctx context.Context, id string) (bool, error) {
-	if id == "" {
-		return false, cmn.ErrInvalidParameter
+// DeleteTask delete task by id
+func (api *PrivateTaskAPI) DeleteTask(args JobArgs) error {
+	job, err := args.toJob(false)
+	if err != nil {
+		return err
 	}
-	return api.manager.CheckTask(id)
+	return api.manager.DeleteTask(job)
 }
 
-func (api *PrivateTaskAPI) DelTask(ctx context.Context, id string) error {
-	if id == "" {
-		return cmn.ErrInvalidParameter
+// GetTaskResult get task running result.
+func (api *PrivateTaskAPI) GetResult(args JobArgs) (map[string]interface{}, error) {
+	job, err := args.toJob(false)
+	if err != nil {
+		return nil, err
 	}
-	return api.manager.DeleteTask(id)
+	return api.manager.GetResult(job)
 }
 
-func (api *PrivateTaskAPI) GetTaskResult(ctx context.Context) []string {
-	return nil
-}
-
-type PublicTaskAPI struct {
-	manager *Manager
-}
-
-func NewPublicTaskAPI(manager *Manager) *PublicTaskAPI {
-	return &PublicTaskAPI{
-		manager: manager,
-	}
-}
-
-func (api *PublicTaskAPI) ListModules(ctx context.Context) []string {
-	if api.manager != nil {
-		return nil
-	}
-	return api.manager.ListModules()
-}
-
-func (api *PublicTaskAPI) CheckModule(ctx context.Context, name string) (bool, error) {
-	if api.manager != nil {
-		return false, nil
-	}
-	return api.manager.CheckModule(name)
-}
-
-func (api *PublicTaskAPI) Stats(ctx context.Context) []string {
-	return nil
-}
-
-// NewPendingTransactions creates a subscription that is triggered each time a transaction
-// enters the transaction pool and was signed from one of the transactions this nodes manages.
-func (api *PublicTaskAPI) NewTaskResults(ctx context.Context) (*server.Subscription, error) {
+// Results creates a subscription that is result of task.
+func (api *PrivateTaskAPI) Results(ctx context.Context) (*server.Subscription, error) {
 	notifier, supported := server.NotifierFromContext(ctx)
 	if !supported {
 		return &server.Subscription{}, server.ErrNotificationsUnsupported
@@ -125,13 +173,13 @@ func (api *PublicTaskAPI) NewTaskResults(ctx context.Context) (*server.Subscript
 	rpcSub := notifier.CreateSubscription()
 
 	go func() {
-		results := make(chan []Result, 128)
+		results := make(chan []cmn.Result, 128)
 		resultsSub := api.manager.es.SubscribeResultTask(results)
 
 		for {
 			select {
-			case hashes := <-results:
-				for _, h := range hashes {
+			case rs := <-results:
+				for _, h := range rs {
 					notifier.Notify(rpcSub.ID, h)
 				}
 			case <-rpcSub.Err():
@@ -143,11 +191,12 @@ func (api *PublicTaskAPI) NewTaskResults(ctx context.Context) (*server.Subscript
 			}
 		}
 	}()
+
 	return rpcSub, nil
 }
 
-// NewHeads send a notification each time a new (header) block is appended to the chain.
-func (api *PublicTaskAPI) NewTasks(ctx context.Context) (*server.Subscription, error) {
+// Results creates a subscription that is result of task.
+func (api *PrivateTaskAPI) NewTask(ctx context.Context) (*server.Subscription, error) {
 	notifier, supported := server.NotifierFromContext(ctx)
 	if !supported {
 		return &server.Subscription{}, server.ErrNotificationsUnsupported
@@ -156,22 +205,53 @@ func (api *PublicTaskAPI) NewTasks(ctx context.Context) (*server.Subscription, e
 	rpcSub := notifier.CreateSubscription()
 
 	go func() {
-		uuid := make(chan TaskUUID)
-		uuidSub := api.manager.es.SubscribeNewTask(uuid)
+		tasks := make(chan int64, 128)
+		resultsSub := api.manager.es.SubscribeNewTask(tasks)
 
 		for {
 			select {
-			case h := <-uuid:
-				notifier.Notify(rpcSub.ID, h)
+			case t := <-tasks:
+				notifier.Notify(rpcSub.ID, t)
 			case <-rpcSub.Err():
-				uuidSub.Unsubscribe()
+				resultsSub.Unsubscribe()
 				return
 			case <-notifier.Closed():
-				uuidSub.Unsubscribe()
+				resultsSub.Unsubscribe()
 				return
 			}
 		}
 	}()
 
 	return rpcSub, nil
+}
+
+type PublicTaskAPI struct {
+	manager *Manager
+}
+
+// NewPublicTaskAPI creates new PublicTaskAPI.
+func NewPublicTaskAPI(manager *Manager) *PublicTaskAPI {
+	return &PublicTaskAPI{
+		manager: manager,
+	}
+}
+
+// ListModules list plugins.
+func (api *PublicTaskAPI) ListModules(ctx context.Context) []string {
+	if api.manager != nil {
+		return nil
+	}
+	return api.manager.ListModules()
+}
+
+// CheckModule check plugin
+func (api *PublicTaskAPI) CheckModule(name string) (bool, error) {
+	if api.manager != nil {
+		return false, nil
+	}
+	return api.manager.CheckModule(name)
+}
+
+func (api *PublicTaskAPI) Stats() []string {
+	return nil
 }

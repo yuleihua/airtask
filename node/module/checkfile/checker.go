@@ -5,26 +5,14 @@ import (
 	"fmt"
 )
 
-func Prev(ctx context.Context) error {
+func TaskMain(ctx context.Context) error {
 
-	fmt.Printf("prev")
+	fmt.Println("main")
 	return nil
 }
 
-func Main(ctx context.Context) error {
+func TaskErr(ctx context.Context, err error) error {
 
-	fmt.Printf("main")
-	return nil
-}
-
-func End(ctx context.Context) error {
-
-	fmt.Printf("end")
-	return nil
-}
-
-func Err(ctx context.Context, err error) error {
-
-	fmt.Printf("handle err is %v", err)
+	fmt.Println("error is ", err)
 	return nil
 }
